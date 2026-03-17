@@ -1,0 +1,53 @@
+{
+  "name": "skillsense",
+  "displayName": "SkillSense",
+  "description": "Context-aware code understanding using skill.md",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:skillsense.sidebar",
+    "onCommand:skillsense.helloWorld"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "skillsense.helloWorld",
+        "title": "SkillSense: Hello World"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "skillsense",
+          "title": "SkillSense",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "skillsense": [
+        {
+          "type": "webview",
+          "id": "skillsense.sidebar",
+          "name": "SkillSense"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}
