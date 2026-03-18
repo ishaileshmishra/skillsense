@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { buildContext, generateAIResponse } from './aiService';
 
 interface SkillFileEntry {
   path: string;
@@ -10,6 +11,8 @@ const MAX_CODE_FILES_TO_SCAN = 200;
 const MAX_RELATED_FILES_PER_RESULT = 5;
 
 const STOP_WORDS = new Set(['the', 'is', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her', 'his', 'was', 'one', 'our', 'out', 'has', 'have', 'this', 'that', 'with', 'from']);
+
+const ERROR_KEYWORDS = new Set(['error', 'failed', 'timeout', 'exception', '500', '404', 'slow', 'latency', 'crash', 'found']);
 
 interface RankedMatch {
   text: string;
@@ -32,6 +35,12 @@ interface EnhancedResult {
   relatedFiles: RelatedFileEntry[];
 }
 
+interface IssueAnalysisResult {
+  type: string;
+  possibleCauses: string[];
+  results: EnhancedResult[];
+}
+
 export class SkillSenseSidebarProvider implements vscode.WebviewViewProvider {
   private _view?: vscode.WebviewView;
   private _skillData: SkillFileEntry[] = [];
@@ -50,7 +59,7 @@ export class SkillSenseSidebarProvider implements vscode.WebviewViewProvider {
     };
     webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
-    webviewView.webview.onDidReceiveMessage((message: { type: string; value?: string; filePath?: string; data?: SkillFileEntry[] | RankedResult[] | EnhancedResult[] }) => {
+    webviewView.webview.onDidReceiveMessage((message: { type: string; value?: string; filePath?: string; data?: SkillFileEntry[] | RankedResult[] | EnhancedResult[] | IssueAnalysisResult }) => {
       if (message.type === 'submit' && message.value !== undefined) {
         console.log('User Input:', message.value);
         this._handleQuery(message.value);
@@ -119,6 +128,42 @@ export class SkillSenseSidebarProvider implements vscode.WebviewViewProvider {
     }
 
     this._view?.webview.postMessage({ type: 'enhancedResults', data: enhanced });
+
+    const issueKeywords = this._extractIssueKeywords(query);
+    const issueType = this._classifyIssue(query);
+    const possibleCauses = this._generateCauses(issueType);
+    const issueQuery = issueKeywords.join(' ');
+    const issueRanked = issueQuery ? this._matchQuery(issueQuery) : [];
+    const issueResults: EnhancedResult[] = [];
+
+    for (const result of issueRanked) {
+      const matchedText = result.matches.map((m) => m.text).join(' ');
+      const keywords = this._extractKeywords(issueKeywords, matchedText);
+      const relatedFiles = await this._searchRelevantFiles(keywords);
+      issueResults.push({
+        path: result.path,
+        matches: result.matches,
+        relatedFiles,
+      });
+    }
+
+    const issueAnalysis: IssueAnalysisResult = {
+      type: issueType,
+      possibleCauses,
+      results: issueResults,
+    };
+    this._view?.webview.postMessage({ type: 'issueAnalysis', data: issueAnalysis });
+
+    try {
+      const context = buildContext(query, issueAnalysis);
+      const aiText = await generateAIResponse(context);
+      this._view?.webview.postMessage({ type: 'aiResponse', data: aiText });
+    } catch {
+      this._view?.webview.postMessage({
+        type: 'aiResponse',
+        data: 'AI response unavailable. Check API key.',
+      });
+    }
   }
 
   private _extractKeywords(queryTokens: string[], fromText: string): string[] {
@@ -167,6 +212,56 @@ export class SkillSenseSidebarProvider implements vscode.WebviewViewProvider {
 
     scored.sort((a, b) => b.score - a.score);
     return scored.slice(0, MAX_RELATED_FILES_PER_RESULT);
+  }
+
+  private _extractIssueKeywords(text: string): string[] {
+    const seen = new Set<string>();
+    const lower = text.toLowerCase();
+    const words = lower.split(/\W+/).filter((w) => w.length > 0);
+    for (const w of words) {
+      if (ERROR_KEYWORDS.has(w) || (w.length > 3 && !STOP_WORDS.has(w))) {
+        seen.add(w);
+      }
+    }
+    return Array.from(seen);
+  }
+
+  private _classifyIssue(text: string): string {
+    const lower = text.toLowerCase();
+    if (/timeout|slow|latency/.test(lower)) {
+      return 'PERFORMANCE';
+    }
+    if (/404|not\s+found/.test(lower)) {
+      return 'MISSING_RESOURCE';
+    }
+    if (/500|exception|crash/.test(lower)) {
+      return 'SERVER_ERROR';
+    }
+    return 'GENERAL';
+  }
+
+  private _generateCauses(type: string): string[] {
+    switch (type) {
+      case 'PERFORMANCE':
+        return [
+          'Possible DB query delay',
+          'Cache miss or not configured',
+          'Heavy processing in service layer',
+        ];
+      case 'MISSING_RESOURCE':
+        return [
+          'Incorrect ID or missing entry',
+          'Data not published or synced',
+        ];
+      case 'SERVER_ERROR':
+        return [
+          'Unhandled exception in service',
+          'Null/undefined data access',
+          'Dependency failure',
+        ];
+      default:
+        return ['Review skill.md and related code for context.'];
+    }
   }
 
   private _computeScore(queryTokens: string[], exactPhrase: string, text: string): number {
@@ -310,6 +405,42 @@ export class SkillSenseSidebarProvider implements vscode.WebviewViewProvider {
     .related-file-link:hover {
       color: var(--vscode-textLink-activeForeground);
     }
+    .issue-analysis-section {
+      margin-top: 16px;
+    }
+    .issue-analysis-section h2 {
+      font-size: 1em;
+      margin: 0 0 8px 0;
+    }
+    .issue-type {
+      font-size: 0.9em;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .issue-causes {
+      margin-bottom: 8px;
+      font-size: 0.9em;
+    }
+    .issue-causes ul {
+      margin: 4px 0 0 0;
+      padding-left: 18px;
+    }
+    .ai-insight-section {
+      margin-top: 16px;
+    }
+    .ai-insight-section h2 {
+      font-size: 1em;
+      margin: 0 0 8px 0;
+    }
+    .ai-insight-content {
+      white-space: pre-wrap;
+      font-size: 0.9em;
+      background: var(--vscode-textBlockQuote-background);
+      padding: 10px;
+      border-radius: 4px;
+      max-height: 300px;
+      overflow: auto;
+    }
   </style>
 </head>
 <body>
@@ -324,12 +455,22 @@ export class SkillSenseSidebarProvider implements vscode.WebviewViewProvider {
     <h2>Results</h2>
     <div id="results-container"></div>
   </div>
+  <div class="issue-analysis-section">
+    <h2>Issue Analysis</h2>
+    <div id="issue-analysis-container"></div>
+  </div>
+  <div class="ai-insight-section">
+    <h2>AI Insight</h2>
+    <div id="ai-insight-container"></div>
+  </div>
   <script>
     const vscode = acquireVsCodeApi();
     const input = document.getElementById('query-input');
     const btn = document.getElementById('submit-btn');
     const container = document.getElementById('skill-files-container');
     const resultsContainer = document.getElementById('results-container');
+    const issueContainer = document.getElementById('issue-analysis-container');
+    const aiInsightContainer = document.getElementById('ai-insight-container');
     function escapeHtml(s) {
       return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
@@ -375,6 +516,48 @@ export class SkillSenseSidebarProvider implements vscode.WebviewViewProvider {
             });
           });
         }
+      }
+      if (msg.type === 'issueAnalysis') {
+        const data = msg.data;
+        if (!data) {
+          issueContainer.textContent = '';
+          return;
+        }
+        const results = data.results || [];
+        if (results.length === 0) {
+          issueContainer.innerHTML = '<div class="issue-type">Issue Type: ' + escapeHtml(data.type) + '</div>' +
+            '<div class="issue-causes"><strong>Possible causes:</strong><ul>' +
+            (data.possibleCauses || []).map(function(c) { return '<li>' + escapeHtml(c) + '</li>'; }).join('') + '</ul></div>' +
+            '<p>No strong matches found. Try refining input.</p>';
+        } else {
+          issueContainer.innerHTML = '<div class="issue-type">Issue Type: ' + escapeHtml(data.type) + '</div>' +
+            '<div class="issue-causes"><strong>Possible causes:</strong><ul>' +
+            (data.possibleCauses || []).map(function(c) { return '<li>' + escapeHtml(c) + '</li>'; }).join('') + '</ul></div>' +
+            data.results.map(function(item) {
+              const snippets = item.matches.map(function(m) {
+                return '<div class="result-snippet">' + escapeHtml(m.text) + '<span class="result-score">(' + m.score + ')</span></div>';
+              }).join('');
+              let relatedHtml = '';
+              if (item.relatedFiles && item.relatedFiles.length > 0) {
+                relatedHtml = '<div class="related-files"><div class="related-files-title">Related Code Files</div>' +
+                  item.relatedFiles.map(function(rf) {
+                    return '<a class="related-file-link" data-path="' + escapeHtml(rf.filePath) + '">' + escapeHtml(rf.filePath) + ' (' + rf.score + ')</a>';
+                  }).join('') + '</div>';
+              }
+              return '<div class="result-file"><div class="result-file-path">' + escapeHtml(item.path) + '</div>' + snippets + relatedHtml + '</div>';
+            }).join('');
+          issueContainer.querySelectorAll('.related-file-link').forEach(function(el) {
+            el.addEventListener('click', function() {
+              const path = el.getAttribute('data-path');
+              if (path) vscode.postMessage({ type: 'openFile', filePath: path });
+            });
+          });
+        }
+      }
+      if (msg.type === 'aiResponse') {
+        const text = (msg.data != null) ? String(msg.data) : '';
+        aiInsightContainer.textContent = text;
+        aiInsightContainer.className = 'ai-insight-content';
       }
     });
   </script>
