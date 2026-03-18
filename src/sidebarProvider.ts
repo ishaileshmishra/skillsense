@@ -1,5 +1,5 @@
-import * as vscode from 'vscode';
-import { buildContext, generateAIResponse } from './aiService';
+import * as vscode from "vscode";
+import { buildContext, generateAIResponse } from "./aiService";
 
 interface SkillFileEntry {
   path: string;
@@ -10,9 +10,44 @@ const MAX_MATCHES_PER_FILE = 10;
 const MAX_CODE_FILES_TO_SCAN = 200;
 const MAX_RELATED_FILES_PER_RESULT = 5;
 
-const STOP_WORDS = new Set(['the', 'is', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her', 'his', 'was', 'one', 'our', 'out', 'has', 'have', 'this', 'that', 'with', 'from']);
+const STOP_WORDS = new Set([
+  "the",
+  "is",
+  "and",
+  "for",
+  "are",
+  "but",
+  "not",
+  "you",
+  "all",
+  "can",
+  "had",
+  "her",
+  "his",
+  "was",
+  "one",
+  "our",
+  "out",
+  "has",
+  "have",
+  "this",
+  "that",
+  "with",
+  "from",
+]);
 
-const ERROR_KEYWORDS = new Set(['error', 'failed', 'timeout', 'exception', '500', '404', 'slow', 'latency', 'crash', 'found']);
+const ERROR_KEYWORDS = new Set([
+  "error",
+  "failed",
+  "timeout",
+  "exception",
+  "500",
+  "404",
+  "slow",
+  "latency",
+  "crash",
+  "found",
+]);
 
 interface RankedMatch {
   text: string;
@@ -50,7 +85,7 @@ export class SkillSenseSidebarProvider implements vscode.WebviewViewProvider {
   resolveWebviewView(
     webviewView: vscode.WebviewView,
     _context: vscode.WebviewViewResolveContext,
-    _token: vscode.CancellationToken
+    _token: vscode.CancellationToken,
   ): void | Thenable<void> {
     this._view = webviewView;
     webviewView.webview.options = {
@@ -59,19 +94,30 @@ export class SkillSenseSidebarProvider implements vscode.WebviewViewProvider {
     };
     webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
-    webviewView.webview.onDidReceiveMessage((message: { type: string; value?: string; filePath?: string; data?: SkillFileEntry[] | RankedResult[] | EnhancedResult[] | IssueAnalysisResult }) => {
-      if (message.type === 'submit' && message.value !== undefined) {
-        console.log('User Input:', message.value);
-        this._handleQuery(message.value);
-      }
-      if (message.type === 'openFile' && message.filePath) {
-        const folder = vscode.workspace.workspaceFolders?.[0];
-        if (folder) {
-          const uri = vscode.Uri.joinPath(folder.uri, message.filePath);
-          vscode.window.showTextDocument(uri);
+    webviewView.webview.onDidReceiveMessage(
+      (message: {
+        type: string;
+        value?: string;
+        filePath?: string;
+        data?:
+          | SkillFileEntry[]
+          | RankedResult[]
+          | EnhancedResult[]
+          | IssueAnalysisResult;
+      }) => {
+        if (message.type === "submit" && message.value !== undefined) {
+          console.log("User Input:", message.value);
+          this._handleQuery(message.value);
         }
-      }
-    });
+        if (message.type === "openFile" && message.filePath) {
+          const folder = vscode.workspace.workspaceFolders?.[0];
+          if (folder) {
+            const uri = vscode.Uri.joinPath(folder.uri, message.filePath);
+            vscode.window.showTextDocument(uri);
+          }
+        }
+      },
+    );
 
     this._loadAndSendSkillFiles(webviewView.webview);
   }
@@ -85,7 +131,10 @@ export class SkillSenseSidebarProvider implements vscode.WebviewViewProvider {
     const results: RankedResult[] = [];
 
     for (const file of this._skillData) {
-      const paragraphs = file.content.split(/\n/).map((p) => p.trim()).filter((p) => p.length > 0);
+      const paragraphs = file.content
+        .split(/\n/)
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0);
       const scored: RankedMatch[] = [];
 
       for (const paragraph of paragraphs) {
@@ -113,11 +162,13 @@ export class SkillSenseSidebarProvider implements vscode.WebviewViewProvider {
   private async _handleQuery(query: string): Promise<void> {
     const ranked = this._matchQuery(query);
     const queryLower = query.toLowerCase().trim();
-    const queryTokens = queryLower ? queryLower.split(/\s+/).filter((t) => t.length > 0) : [];
+    const queryTokens = queryLower
+      ? queryLower.split(/\s+/).filter((t) => t.length > 0)
+      : [];
     const enhanced: EnhancedResult[] = [];
 
     for (const result of ranked) {
-      const matchedText = result.matches.map((m) => m.text).join(' ');
+      const matchedText = result.matches.map((m) => m.text).join(" ");
       const keywords = this._extractKeywords(queryTokens, matchedText);
       const relatedFiles = await this._searchRelevantFiles(keywords);
       enhanced.push({
@@ -127,17 +178,20 @@ export class SkillSenseSidebarProvider implements vscode.WebviewViewProvider {
       });
     }
 
-    this._view?.webview.postMessage({ type: 'enhancedResults', data: enhanced });
+    this._view?.webview.postMessage({
+      type: "enhancedResults",
+      data: enhanced,
+    });
 
     const issueKeywords = this._extractIssueKeywords(query);
     const issueType = this._classifyIssue(query);
     const possibleCauses = this._generateCauses(issueType);
-    const issueQuery = issueKeywords.join(' ');
+    const issueQuery = issueKeywords.join(" ");
     const issueRanked = issueQuery ? this._matchQuery(issueQuery) : [];
     const issueResults: EnhancedResult[] = [];
 
     for (const result of issueRanked) {
-      const matchedText = result.matches.map((m) => m.text).join(' ');
+      const matchedText = result.matches.map((m) => m.text).join(" ");
       const keywords = this._extractKeywords(issueKeywords, matchedText);
       const relatedFiles = await this._searchRelevantFiles(keywords);
       issueResults.push({
@@ -152,16 +206,19 @@ export class SkillSenseSidebarProvider implements vscode.WebviewViewProvider {
       possibleCauses,
       results: issueResults,
     };
-    this._view?.webview.postMessage({ type: 'issueAnalysis', data: issueAnalysis });
+    this._view?.webview.postMessage({
+      type: "issueAnalysis",
+      data: issueAnalysis,
+    });
 
     try {
       const context = buildContext(query, issueAnalysis);
       const aiText = await generateAIResponse(context);
-      this._view?.webview.postMessage({ type: 'aiResponse', data: aiText });
+      this._view?.webview.postMessage({ type: "aiResponse", data: aiText });
     } catch {
       this._view?.webview.postMessage({
-        type: 'aiResponse',
-        data: 'AI response unavailable. Check API key.',
+        type: "aiResponse",
+        data: "AI response unavailable. Check API key.",
       });
     }
   }
@@ -173,18 +230,23 @@ export class SkillSenseSidebarProvider implements vscode.WebviewViewProvider {
         seen.add(t.toLowerCase());
       }
     }
-    const words = fromText.toLowerCase().split(/\W+/).filter((w) => w.length > 3 && !STOP_WORDS.has(w));
+    const words = fromText
+      .toLowerCase()
+      .split(/\W+/)
+      .filter((w) => w.length > 3 && !STOP_WORDS.has(w));
     for (const w of words) {
       seen.add(w);
     }
     return Array.from(seen);
   }
 
-  private async _searchRelevantFiles(keywords: string[]): Promise<RelatedFileEntry[]> {
+  private async _searchRelevantFiles(
+    keywords: string[],
+  ): Promise<RelatedFileEntry[]> {
     if (keywords.length === 0) {
       return [];
     }
-    const uris = await vscode.workspace.findFiles('**/*.{ts,js,tsx,jsx}');
+    const uris = await vscode.workspace.findFiles("**/*.{ts,js,tsx,jsx}");
     const limited = uris.slice(0, MAX_CODE_FILES_TO_SCAN);
     const scored: { filePath: string; score: number }[] = [];
 
@@ -229,42 +291,46 @@ export class SkillSenseSidebarProvider implements vscode.WebviewViewProvider {
   private _classifyIssue(text: string): string {
     const lower = text.toLowerCase();
     if (/timeout|slow|latency/.test(lower)) {
-      return 'PERFORMANCE';
+      return "PERFORMANCE";
     }
     if (/404|not\s+found/.test(lower)) {
-      return 'MISSING_RESOURCE';
+      return "MISSING_RESOURCE";
     }
     if (/500|exception|crash/.test(lower)) {
-      return 'SERVER_ERROR';
+      return "SERVER_ERROR";
     }
-    return 'GENERAL';
+    return "GENERAL";
   }
 
   private _generateCauses(type: string): string[] {
     switch (type) {
-      case 'PERFORMANCE':
+      case "PERFORMANCE":
         return [
-          'Possible DB query delay',
-          'Cache miss or not configured',
-          'Heavy processing in service layer',
+          "Possible DB query delay",
+          "Cache miss or not configured",
+          "Heavy processing in service layer",
         ];
-      case 'MISSING_RESOURCE':
+      case "MISSING_RESOURCE":
         return [
-          'Incorrect ID or missing entry',
-          'Data not published or synced',
+          "Incorrect ID or missing entry",
+          "Data not published or synced",
         ];
-      case 'SERVER_ERROR':
+      case "SERVER_ERROR":
         return [
-          'Unhandled exception in service',
-          'Null/undefined data access',
-          'Dependency failure',
+          "Unhandled exception in service",
+          "Null/undefined data access",
+          "Dependency failure",
         ];
       default:
-        return ['Review skill.md and related code for context.'];
+        return ["Review skill.md and related code for context."];
     }
   }
 
-  private _computeScore(queryTokens: string[], exactPhrase: string, text: string): number {
+  private _computeScore(
+    queryTokens: string[],
+    exactPhrase: string,
+    text: string,
+  ): number {
     const textLower = text.toLowerCase();
     let score = 0;
     if (exactPhrase.length > 0 && textLower.includes(exactPhrase)) {
@@ -283,7 +349,7 @@ export class SkillSenseSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private async _loadAndSendSkillFiles(webview: vscode.Webview): Promise<void> {
-    const uris = await vscode.workspace.findFiles('**/skill.md');
+    const uris = await vscode.workspace.findFiles("**/skill.md");
     const files: SkillFileEntry[] = [];
 
     for (const uri of uris) {
@@ -294,7 +360,7 @@ export class SkillSenseSidebarProvider implements vscode.WebviewViewProvider {
     }
 
     this._skillData = files;
-    webview.postMessage({ type: 'skillData', data: files });
+    webview.postMessage({ type: "skillData", data: files });
   }
 
   private _getHtmlForWebview(webview: vscode.Webview): string {

@@ -62,9 +62,11 @@ npm install
    - Edit the HTML/CSS/JS inside the template string in `sidebarProvider.ts` for webview UI changes.
 
 2. **Compile**
+
    ```bash
    npm run compile
    ```
+
    - Or run **Watch**: `npm run watch` in a terminal so `tsc` recompiles on save.
 
 3. **Reload after changes**
@@ -73,7 +75,7 @@ npm install
 
 4. **Debug**
    - Set breakpoints in `src/*.ts` (they map to `out/*.js`).
-   - **Debug Console** in the *original* VS Code window (where you pressed F5) shows `console.log` output (e.g. "User Input: ...").
+   - **Debug Console** in the _original_ VS Code window (where you pressed F5) shows `console.log` output (e.g. "User Input: ...").
    - Use **Run → Start Debugging** (F5) so the debugger is attached.
 
 ## Project structure
@@ -94,10 +96,10 @@ skillsense/
 
 ## Quick reference
 
-| Action              | How |
-|---------------------|-----|
-| Launch extension    | F5 in VS Code with this folder open |
-| Reload extension    | Ctrl+R / Cmd+R in Extension Development Host |
-| Compile TypeScript  | `npm run compile` |
-| Watch compile       | `npm run watch` |
-| View logs           | Debug Console in the window where you pressed F5 |
+| Action             | How                                              |
+| ------------------ | ------------------------------------------------ |
+| Launch extension   | F5 in VS Code with this folder open              |
+| Reload extension   | Ctrl+R / Cmd+R in Extension Development Host     |
+| Compile TypeScript | `npm run compile`                                |
+| Watch compile      | `npm run watch`                                  |
+| View logs          | Debug Console in the window where you pressed F5 |
